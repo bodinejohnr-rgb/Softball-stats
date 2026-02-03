@@ -271,3 +271,33 @@ input[type="date"]::-webkit-calendar-picker-indicator{ filter:invert(0.7); curso
 
 @keyframes fadeIn{ from{ opacity:0; } to{ opacity:1; } }
 @keyframes slideUp{ from{ transform:translateY(20px); opacity:0; } to{ transform:translateY(0); opacity:1; } }
+
+/* selected result highlight */
+.big.selected{
+  background:var(--blue-glow);
+  border-color:var(--blue);
+  box-shadow:0 0 12px var(--blue-glow);
+}
+.big[data-res="1B"].selected,
+.big[data-res="2B"].selected,
+.big[data-res="3B"].selected{
+  background:var(--green-glow);
+  border-color:var(--green);
+  box-shadow:0 0 12px var(--green-glow);
+}
+.big[data-res="HR"].selected{
+  background:var(--gold-glow);
+  border-color:var(--gold);
+  box-shadow:0 0 14px var(--gold-glow);
+}
+.big[data-res="BB"].selected{
+  background:var(--gold-glow);
+  border-color:var(--gold);
+  box-shadow:0 0 12px var(--gold-glow);
+}
+.big[data-res="K"].selected,
+.big[data-res="OUT"].selected{
+  background:var(--accent-glow);
+  border-color:var(--accent);
+  box-shadow:0 0 12px var(--accent-glow);
+}
