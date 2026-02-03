@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lineup</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>🧾 Lineup</h1>
+    <nav class="topnav">
+      <a href="./index.html">Home</a>
+      <a href="./reports.html">Reports</a>
+    </nav>
+  </header>
+
+  <main class="container two-col">
+    <section class="card">
+      <h2 id="gameTitle">Current Game</h2>
+
+      <div class="row">
+        <button id="startGameBtn" class="btn primary">Start Game</button>
+        <button id="clearLineupBtn" class="btn danger">Clear Lineup</button>
+      </div>
+
+      <h3>Batting Order</h3>
+      <div id="lineupList" class="list"></div>
+      <p class="muted">Tap players on the right to add them here.</p>
+    </section>
+
+    <section class="card">
+      <h2>Roster</h2>
+
+      <div class="row">
+        <input id="newPlayerName" class="input" type="text" placeholder="Add player name" />
+        <button id="addPlayerBtn" class="btn secondary">Add</button>
+      </div>
+
+      <div id="rosterList" class="list"></div>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+  <script>
+    const gameId = App.getCurrentGameId();
+    const game = App.getGame(gameId);
+    if (!game) window.location.href = "./index.html";
+
+    document.getElementById("gameTitle").textContent =
+      `${game.date || ""} vs ${game.opponent || "Opponent"}` + (game.location ? ` • ${game.location}` : "");
+
+    function renderRoster(){
+      const wrap = document.getElementById("rosterList");
+      wrap.innerHTML = "";
+      const players = App.getPlayers().sort((a,b)=> (a.name||"").localeCompare(b.name||""));
+      players.forEach(p => {
+        const btn = document.createElement("button");
+        btn.className = "list-item";
+        btn.innerHTML = `
+          <div class="li-main">
+            <div class="li-title">${App.escapeHtml(p.name)}</div>
+          </div>
+          <div class="li-action">Add</div>
+        `;
+        btn.addEventListener("click", () => {
+          App.addToLineup(gameId, p.id);
+          renderLineup();
+        });
+        wrap.appendChild(btn);
+      });
+    }
+
+    function renderLineup(){
+      const wrap = document.getElementById("lineupList");
+      wrap.innerHTML = "";
+      const lineup = App.getLineup(gameId);
+      lineup.forEach((playerId, idx) => {
+        const p = App.getPlayer(playerId);
+        const row = document.createElement("div");
+        row.className = "lineup-row";
+        row.innerHTML = `
+          <div class="lineup-num">${idx+1}.</div>
+          <div class="lineup-name">${App.escapeHtml(p?.name || "Unknown")}</div>
+          <div class="lineup-actions">
+            <button class="mini" data-act="up">↑</button>
+            <button class="mini" data-act="down">↓</button>
+            <button class="mini danger" data-act="remove">✖</button>
+          </div>
+        `;
+        row.querySelectorAll("button.mini").forEach(b=>{
+          b.addEventListener("click", () => {
+            const act = b.dataset.act;
+            if (act === "up") App.moveLineup(gameId, idx, idx-1);
+            if (act === "down") App.moveLineup(gameId, idx, idx+1);
+            if (act === "remove") App.removeFromLineup(gameId, idx);
+            renderLineup();
+          });
+        });
+        wrap.appendChild(row);
+      });
+    }
+
+    document.getElementById("addPlayerBtn").addEventListener("click", () => {
+      const name = document.getElementById("newPlayerName").value.trim();
+      if (!name) return;
+      App.addPlayer({ name });
+      document.getElementById("newPlayerName").value = "";
+      renderRoster();
+    });
+
+    document.getElementById("newPlayerName").addEventListener("keydown", (e)=>{
+      if (e.key === "Enter") document.getElementById("addPlayerBtn").click();
+    });
+
+    document.getElementById("clearLineupBtn").addEventListener("click", () => {
+      App.setLineup(gameId, []);
+      renderLineup();
+    });
+
+    document.getElementById("startGameBtn").addEventListener("click", () => {
+      const lineup = App.getLineup(gameId);
+      if (lineup.length === 0) return alert("Add at least 1 player to the lineup.");
+      App.initGameState(gameId); // sets batter index = 0
+      window.location.href = "./game.html";
+    });
+
+    renderRoster();
+    renderLineup();
+  </script>
+</body>
+</html>
