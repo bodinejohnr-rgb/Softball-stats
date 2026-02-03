@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="win=device-width, initial-scale=1.0" />
   <title>Game Logger</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
@@ -41,10 +41,10 @@
 
           <div class="row" style="margin-top:10px;">
             <button id="sacBtn" class="btn toggle">SAC: OFF</button>
-            <button id="undoBtn" class="btn ghost">Undo Last PA</button>
+            <button id="clearBtn" class="btn ghost">Clear</button>
           </div>
 
-          <p id="savedMsg" class="hint" style="display:none;">✅ Saved</p>
+          <p id="selectedMsg" class="hint" style="display:none;">✓ Selected</p>
         </div>
 
         <div class="block">
@@ -61,11 +61,14 @@
           </div>
 
           <div class="row" style="margin-top:12px;">
-            <button id="nextBatterBtn" class="btn primary">Next Batter ➜</button>
+            <button id="prevBatterBtn" class="btn ghost">← Previous</button>
+            <button id="nextBatterBtn" class="btn primary">Next Batter →</button>
+          </div>
+          <div class="row" style="margin-top:8px;">
             <button id="finalBtn" class="btn danger">Finalize Game</button>
           </div>
 
-          <p class="muted">Tap a result to save the PA. Then adjust RBI/RUNS/SAC if needed. Tap Next Batter when ready.</p>
+          <p class="muted">Select result, adjust RBI/RUNS/SAC, then tap Next Batter to save.</p>
         </div>
       </div>
     </section>
@@ -82,7 +85,29 @@
       `${game.date || ""} vs ${game.opponent || "Opponent"}` + (game.location ? ` • ${game.location}` : "");
 
     let sacOn = false;
-    let lastEventId = null;
+    let currentResult = null;  // tracks selected result (not saved yet)
+    let currentRBI = 0;
+    let currentRUNS = 0;
+
+    // map batter index -> event ID for previously saved PAs
+    let batterEventMap = {};
+
+    function loadBatterEventMap(){
+      batterEventMap = {};
+      const lineup = App.getLineup(gameId);
+      const events = App.getEvents().filter(e => e.gameId === gameId);
+      
+      // Build a map: for each batter position, store the most recent event ID
+      // We'll use a simple approach: group events by playerId, then associate with lineup index
+      lineup.forEach((playerId, idx) => {
+        const playerEvents = events.filter(e => e.playerId === playerId);
+        if(playerEvents.length > 0){
+          // Get the most recent event for this player in this game
+          const sorted = playerEvents.sort((a,b)=> (b.ts||0)-(a.ts||0));
+          batterEventMap[idx] = sorted[0].id;
+        }
+      });
+    }
 
     function makeSeg(elId, onPick){
       const el = document.getElementById(elId);
@@ -98,17 +123,16 @@
     }
 
     function setSegValue(elId, val){
-      const el = document.getElementById(elId);
-      el.querySelectorAll(".seg-btn").forEach(b=>{
+      document.getElementById(elId).querySelectorAll(".seg-btn").forEach(b=>{
         b.classList.toggle("active", Number(b.dataset.val) === val);
       });
     }
 
-    function showSaved(){
-      const m = document.getElementById("savedMsg");
+    function showSelected(){
+      const m = document.getElementById("selectedMsg");
       m.style.display = "block";
-      clearTimeout(showSaved._t);
-      showSaved._t = setTimeout(()=> m.style.display="none", 700);
+      clearTimeout(showSelected._t);
+      showSelected._t = setTimeout(()=> m.style.display="none", 700);
     }
 
     function getCurrentBatter(){
@@ -123,6 +147,55 @@
       const p = App.getPlayer(playerId);
       document.getElementById("batterName").textContent = p?.name || "Unknown";
       document.getElementById("batterSpot").textContent = `Spot: ${idx+1} of ${lineup.length}`;
+      
+      // Load any existing event for this batter position
+      loadPreviousPA(idx);
+    }
+
+    function loadPreviousPA(batterIdx){
+      // Check if this batter already has a saved PA
+      const eventId = batterEventMap[batterIdx];
+      if(!eventId){
+        // No previous PA - clear selection
+        clearSelection();
+        return;
+      }
+
+      const ev = App.getEvent(eventId);
+      if(!ev){
+        clearSelection();
+        return;
+      }
+
+      // Load the saved PA into current selection
+      currentResult = ev.result;
+      currentRBI = ev.rbi || 0;
+      currentRUNS = ev.runs || 0;
+      sacOn = ev.sac || false;
+
+      // Update UI
+      highlightResult(currentResult);
+      setSegValue("rbiPicker", currentRBI);
+      setSegValue("runsPicker", currentRUNS);
+      renderSac();
+    }
+
+    function clearSelection(){
+      currentResult = null;
+      currentRBI = 0;
+      currentRUNS = 0;
+      sacOn = false;
+      
+      document.querySelectorAll(".big").forEach(b => b.classList.remove("selected"));
+      setSegValue("rbiPicker", 0);
+      setSegValue("runsPicker", 0);
+      renderSac();
+    }
+
+    function highlightResult(res){
+      document.querySelectorAll(".big").forEach(b => {
+        b.classList.toggle("selected", b.dataset.res === res);
+      });
     }
 
     function renderSac(){
@@ -130,59 +203,22 @@
       document.getElementById("sacBtn").classList.toggle("on", sacOn);
     }
 
-    function renderAdjusters(){
-      if (!lastEventId){
-        setSegValue("rbiPicker", 0);
-        setSegValue("runsPicker", 0);
-        return;
-      }
-      const ev = App.getEvent(lastEventId);
-      setSegValue("rbiPicker", ev?.rbi ?? 0);
-      setSegValue("runsPicker", ev?.runs ?? 0);
-    }
-
     // build pickers
     makeSeg("rbiPicker", (v)=>{
-      if (!lastEventId) return;
-      App.updateEvent(lastEventId, { rbi: v });
-      renderAdjusters();
+      currentRBI = v;
+      setSegValue("rbiPicker", v);
     });
     makeSeg("runsPicker", (v)=>{
-      if (!lastEventId) return;
-      App.updateEvent(lastEventId, { runs: v });
-      renderAdjusters();
+      currentRUNS = v;
+      setSegValue("runsPicker", v);
     });
 
-    // result buttons: save immediately
+    // result buttons: just select (don't save yet)
     document.querySelectorAll("[data-res]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
-        const res = btn.dataset.res;
-
-        const { playerId } = getCurrentBatter();
-        if (!playerId) return alert("Lineup is empty. Go back to Lineup.");
-
-        const isSac = sacOn && res === "OUT";
-        const outType = (res === "K") ? "K" : null;
-
-        const ev = App.addEvent({
-          gameId,
-          playerId,
-          result: res,
-          outType,
-          sac: isSac,
-          rbi: 0,
-          runs: 0
-        });
-
-        lastEventId = ev.id;
-        showSaved();
-        renderAdjusters();
-
-        // SAC auto resets after recording
-        if (sacOn) {
-          sacOn = false;
-          renderSac();
-        }
+        currentResult = btn.dataset.res;
+        highlightResult(currentResult);
+        showSelected();
       });
     });
 
@@ -191,19 +227,66 @@
       renderSac();
     });
 
-    document.getElementById("undoBtn").addEventListener("click", ()=>{
-      if (!lastEventId) return;
-      App.deleteEvent(lastEventId);
-      lastEventId = null;
-      renderAdjusters();
-      alert("Last PA removed.");
+    document.getElementById("clearBtn").addEventListener("click", ()=>{
+      clearSelection();
     });
 
     document.getElementById("nextBatterBtn").addEventListener("click", ()=>{
+      const { idx, playerId } = getCurrentBatter();
+      
+      if(!currentResult){
+        alert("Please select a result first.");
+        return;
+      }
+
+      if(!playerId){
+        alert("Lineup is empty. Go back to Lineup.");
+        return;
+      }
+
+      // Check if there's already a saved PA for this batter
+      const existingEventId = batterEventMap[idx];
+      
+      if(existingEventId){
+        // Update existing event
+        App.updateEvent(existingEventId, {
+          result: currentResult,
+          outType: currentResult === "K" ? "K" : null,
+          sac: sacOn && currentResult === "OUT",
+          rbi: currentRBI,
+          runs: currentRUNS
+        });
+      } else {
+        // Create new event
+        const ev = App.addEvent({
+          gameId,
+          playerId,
+          result: currentResult,
+          outType: currentResult === "K" ? "K" : null,
+          sac: sacOn && currentResult === "OUT",
+          rbi: currentRBI,
+          runs: currentRUNS
+        });
+        batterEventMap[idx] = ev.id;
+      }
+
+      // Advance to next batter
       App.advanceBatter(gameId);
-      lastEventId = null; // clear selection so you don't edit the previous PA by mistake
+      clearSelection();
       renderBatter();
-      renderAdjusters();
+    });
+
+    document.getElementById("prevBatterBtn").addEventListener("click", ()=>{
+      const lineup = App.getLineup(gameId);
+      if(!lineup.length) return;
+      
+      const st = App.getGameState(gameId);
+      const currentIdx = st.batterIndex || 0;
+      const prevIdx = (currentIdx - 1 + lineup.length) % lineup.length;
+      
+      App.setGameState(gameId, { batterIndex: prevIdx });
+      clearSelection();
+      renderBatter();
     });
 
     document.getElementById("finalBtn").addEventListener("click", ()=>{
@@ -214,9 +297,9 @@
 
     // init state if needed
     App.initGameState(gameId);
+    loadBatterEventMap();
     renderSac();
     renderBatter();
-    renderAdjusters();
   </script>
 </body>
 </html>
