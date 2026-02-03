@@ -15,14 +15,12 @@
       <a href="./game.html">Logger</a>
     </nav>
   </header>
-
   <main class="container">
     <section class="card">
       <div class="row" style="justify-content:space-between; align-items:center;">
         <h2>Season Totals</h2>
         <button id="exportBtn" class="btn secondary">Export JSON</button>
       </div>
-
       <div class="table-wrap">
         <table class="tbl" id="totalsTable">
           <thead>
@@ -36,11 +34,9 @@
           <tbody></tbody>
         </table>
       </div>
-
       <p class="muted">Totals are calculated across all saved games/events on this device.</p>
     </section>
   </main>
-
   <script src="./app.js"></script>
   <script src="./stats.js"></script>
   <script>
@@ -48,17 +44,14 @@
       const players = App.getPlayers();
       const events = App.getEvents();
       const byPlayer = Stats.groupByPlayer(events);
-
       const tbody = document.querySelector("#totalsTable tbody");
       tbody.innerHTML = "";
-
       players
         .slice()
         .sort((a,b)=> (a.name||"").localeCompare(b.name||""))
         .forEach(p=>{
           const evs = byPlayer[p.id] || [];
           const s = Stats.compute(evs);
-
           const tr = document.createElement("tr");
           tr.innerHTML = `
             <td class="left">${App.escapeHtml(p.name)}</td>
@@ -69,7 +62,6 @@
           tbody.appendChild(tr);
         });
     }
-
     document.getElementById("exportBtn").addEventListener("click", ()=>{
       const payload = App.exportAll();
       const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
@@ -80,7 +72,6 @@
       a.click();
       URL.revokeObjectURL(url);
     });
-
     render();
   </script>
 </body>
