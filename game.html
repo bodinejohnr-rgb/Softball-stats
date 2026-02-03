@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game Logger</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>🎮 Game Logger</h1>
+    <nav class="topnav">
+      <a href="./lineup.html">Lineup</a>
+      <a href="./reports.html">Reports</a>
+      <a href="./index.html">Home</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2 id="gameTitle"></h2>
+
+      <div class="now-batting">
+        <div class="label">Now Batting</div>
+        <div id="batterName" class="batter"></div>
+        <div id="batterSpot" class="muted"></div>
+      </div>
+
+      <div class="grid">
+        <div class="block">
+          <h3>Result</h3>
+          <div class="btn-grid">
+            <button class="big" data-res="1B">1B</button>
+            <button class="big" data-res="2B">2B</button>
+            <button class="big" data-res="3B">3B</button>
+            <button class="big" data-res="HR">HR</button>
+            <button class="big" data-res="BB">BB</button>
+            <button class="big" data-res="K">K</button>
+            <button class="big" data-res="OUT">OUT</button>
+          </div>
+
+          <div class="row" style="margin-top:10px;">
+            <button id="sacBtn" class="btn toggle">SAC: OFF</button>
+            <button id="undoBtn" class="btn ghost">Undo Last PA</button>
+          </div>
+
+          <p id="savedMsg" class="hint" style="display:none;">✅ Saved</p>
+        </div>
+
+        <div class="block">
+          <h3>Adjust This PA</h3>
+
+          <div class="picker">
+            <div class="picker-label">RBI</div>
+            <div id="rbiPicker" class="seg"></div>
+          </div>
+
+          <div class="picker">
+            <div class="picker-label">RUNS</div>
+            <div id="runsPicker" class="seg"></div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <button id="nextBatterBtn" class="btn primary">Next Batter ➜</button>
+            <button id="finalBtn" class="btn danger">Finalize Game</button>
+          </div>
+
+          <p class="muted">Tap a result to save the PA. Then adjust RBI/RUNS/SAC if needed. Tap Next Batter when ready.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+  <script src="./stats.js"></script>
+  <script>
+    const gameId = App.getCurrentGameId();
+    const game = App.getGame(gameId);
+    if (!game) window.location.href = "./index.html";
+
+    document.getElementById("gameTitle").textContent =
+      `${game.date || ""} vs ${game.opponent || "Opponent"}` + (game.location ? ` • ${game.location}` : "");
+
+    let sacOn = false;
+    let lastEventId = null;
+
+    function makeSeg(elId, onPick){
+      const el = document.getElementById(elId);
+      el.innerHTML = "";
+      for (let i=0;i<=4;i++){
+        const b = document.createElement("button");
+        b.className = "seg-btn";
+        b.textContent = String(i);
+        b.dataset.val = String(i);
+        b.addEventListener("click", () => onPick(i));
+        el.appendChild(b);
+      }
+    }
+
+    function setSegValue(elId, val){
+      const el = document.getElementById(elId);
+      el.querySelectorAll(".seg-btn").forEach(b=>{
+        b.classList.toggle("active", Number(b.dataset.val) === val);
+      });
+    }
+
+    function showSaved(){
+      const m = document.getElementById("savedMsg");
+      m.style.display = "block";
+      clearTimeout(showSaved._t);
+      showSaved._t = setTimeout(()=> m.style.display="none", 700);
+    }
+
+    function getCurrentBatter(){
+      const st = App.getGameState(gameId);
+      const lineup = App.getLineup(gameId);
+      const idx = Math.max(0, Math.min(st.batterIndex || 0, lineup.length-1));
+      return { lineup, idx, playerId: lineup[idx] };
+    }
+
+    function renderBatter(){
+      const { lineup, idx, playerId } = getCurrentBatter();
+      const p = App.getPlayer(playerId);
+      document.getElementById("batterName").textContent = p?.name || "Unknown";
+      document.getElementById("batterSpot").textContent = `Spot: ${idx+1} of ${lineup.length}`;
+    }
+
+    function renderSac(){
+      document.getElementById("sacBtn").textContent = sacOn ? "SAC: ON" : "SAC: OFF";
+      document.getElementById("sacBtn").classList.toggle("on", sacOn);
+    }
+
+    function renderAdjusters(){
+      if (!lastEventId){
+        setSegValue("rbiPicker", 0);
+        setSegValue("runsPicker", 0);
+        return;
+      }
+      const ev = App.getEvent(lastEventId);
+      setSegValue("rbiPicker", ev?.rbi ?? 0);
+      setSegValue("runsPicker", ev?.runs ?? 0);
+    }
+
+    // build pickers
+    makeSeg("rbiPicker", (v)=>{
+      if (!lastEventId) return;
+      App.updateEvent(lastEventId, { rbi: v });
+      renderAdjusters();
+    });
+    makeSeg("runsPicker", (v)=>{
+      if (!lastEventId) return;
+      App.updateEvent(lastEventId, { runs: v });
+      renderAdjusters();
+    });
+
+    // result buttons: save immediately
+    document.querySelectorAll("[data-res]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const res = btn.dataset.res;
+
+        const { playerId } = getCurrentBatter();
+        if (!playerId) return alert("Lineup is empty. Go back to Lineup.");
+
+        const isSac = sacOn && res === "OUT";
+        const outType = (res === "K") ? "K" : null;
+
+        const ev = App.addEvent({
+          gameId,
+          playerId,
+          result: res,
+          outType,
+          sac: isSac,
+          rbi: 0,
+          runs: 0
+        });
+
+        lastEventId = ev.id;
+        showSaved();
+        renderAdjusters();
+
+        // SAC auto resets after recording
+        if (sacOn) {
+          sacOn = false;
+          renderSac();
+        }
+      });
+    });
+
+    document.getElementById("sacBtn").addEventListener("click", ()=>{
+      sacOn = !sacOn;
+      renderSac();
+    });
+
+    document.getElementById("undoBtn").addEventListener("click", ()=>{
+      if (!lastEventId) return;
+      App.deleteEvent(lastEventId);
+      lastEventId = null;
+      renderAdjusters();
+      alert("Last PA removed.");
+    });
+
+    document.getElementById("nextBatterBtn").addEventListener("click", ()=>{
+      App.advanceBatter(gameId);
+      lastEventId = null; // clear selection so you don't edit the previous PA by mistake
+      renderBatter();
+      renderAdjusters();
+    });
+
+    document.getElementById("finalBtn").addEventListener("click", ()=>{
+      App.finalizeGame(gameId);
+      alert("Game finalized. You can still view it in reports.");
+      window.location.href = "./reports.html";
+    });
+
+    // init state if needed
+    App.initGameState(gameId);
+    renderSac();
+    renderBatter();
+    renderAdjusters();
+  </script>
+</body>
+</html>
