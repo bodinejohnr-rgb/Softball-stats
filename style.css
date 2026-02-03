@@ -210,3 +210,20 @@ input[type="date"]::-webkit-calendar-picker-indicator{ filter:invert(0.7); curso
 ::-webkit-scrollbar-track{ background:transparent; }
 ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:3px; }
 ::-webkit-scrollbar-thumb:hover{ background:var(--border-hover); }
+
+/* tabs */
+.tabs{ display:flex; gap:6px; flex-wrap:wrap; margin:16px 0 20px; border-bottom:1px solid var(--border); padding-bottom:2px; }
+.tab-btn{
+  background:transparent; border:none; color:var(--muted);
+  font-family:inherit; font-size:13px; font-weight:600;
+  padding:8px 16px; border-radius:8px 8px 0 0;
+  cursor:pointer; transition:background .2s, color .2s, border-color .2s;
+  border-bottom:2px solid transparent; margin-bottom:-2px;
+}
+.tab-btn:hover{ color:var(--text); background:rgba(74,158,255,.04); }
+.tab-btn.active{ color:var(--blue); border-bottom-color:var(--blue); background:rgba(74,158,255,.08); }
+.tab-content{ display:none; }
+.tab-content.active{ display:block; }
+.game-header{ margin-bottom:14px; }
+.game-header h3{ margin:0; font-family:'Bebas Neue',sans-serif; font-size:18px; letter-spacing:1.5px; color:var(--text); }
+.game-header .muted{ margin-top:2px; }
