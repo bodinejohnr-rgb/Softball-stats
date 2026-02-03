@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Baseball Stats Tracker</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>⚾ Stats Tracker</h1>
+    <nav class="topnav">
+      <a href="./reports.html">Reports</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>New Game</h2>
+      <div class="form-grid">
+        <label>
+          Date
+          <input id="gameDate" type="date" />
+        </label>
+        <label>
+          Opponent
+          <input id="opponent" type="text" placeholder="e.g., Tigers" />
+        </label>
+        <label>
+          Location (optional)
+          <input id="location" type="text" placeholder="Field 2" />
+        </label>
+      </div>
+
+      <div class="row">
+        <button id="newGameBtn" class="btn primary">Start New Game</button>
+        <a class="btn ghost" href="./reports.html">View Reports</a>
+      </div>
+
+      <p class="hint">
+        Tip: Add players on the Lineup screen (you can add roster anytime).
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Continue Game</h2>
+      <div id="openGames" class="list"></div>
+      <p id="noGames" class="muted" style="display:none;">No open games yet.</p>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+  <script>
+    // Defaults
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    document.getElementById("gameDate").value = `${yyyy}-${mm}-${dd}`;
+
+    function renderOpenGames(){
+      const wrap = document.getElementById("openGames");
+      wrap.innerHTML = "";
+      const games = App.getGames().filter(g => !g.isFinal).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
+      document.getElementById("noGames").style.display = games.length ? "none" : "block";
+
+      games.slice(0,10).forEach(g => {
+        const item = document.createElement("button");
+        item.className = "list-item";
+        item.innerHTML = `
+          <div class="li-main">
+            <div class="li-title">${App.escapeHtml(g.opponent || "Opponent")}</div>
+            <div class="li-sub">${App.escapeHtml(g.date || "")} • ${App.escapeHtml(g.location || "")}</div>
+          </div>
+          <div class="li-action">Resume</div>
+        `;
+        item.addEventListener("click", () => {
+          App.setCurrentGameId(g.id);
+          // go to lineup (you asked home -> lineup)
+          window.location.href = "./lineup.html";
+        });
+        wrap.appendChild(item);
+      });
+    }
+
+    document.getElementById("newGameBtn").addEventListener("click", () => {
+      const date = document.getElementById("gameDate").value;
+      const opponent = document.getElementById("opponent").value.trim();
+      const location = document.getElementById("location").value.trim();
+
+      const game = App.createGame({ date, opponent, location });
+      App.setCurrentGameId(game.id);
+      window.location.href = "./lineup.html";
+    });
+
+    renderOpenGames();
+  </script>
+</body>
+</html>
