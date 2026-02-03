@@ -146,7 +146,7 @@ const App = (() => {
   function setGameState(gameId, state){
     const data = load();
     if (!data.gameState) data.gameState = {};
-    data.gameState[gameId] = { ...(data.gameState[gameId] || {}), ...(state || {}) };
+    data.gameState[gameId] = { ...(data.gameState[gameId] || {}), ...state };
     save(data);
   }
 
