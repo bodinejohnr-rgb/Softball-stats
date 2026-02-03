@@ -18,41 +18,89 @@
   <main class="container">
     <section class="card">
       <div class="row" style="justify-content:space-between; align-items:center;">
-        <h2>Season Totals</h2>
+        <h2>Statistics</h2>
         <button id="exportBtn" class="btn secondary">Export JSON</button>
       </div>
-      <div class="table-wrap">
-        <table class="tbl" id="totalsTable">
-          <thead>
-            <tr>
-              <th>Player</th>
-              <th>PA</th><th>AB</th><th>H</th><th>1B</th><th>2B</th><th>3B</th><th>HR</th>
-              <th>TB</th><th>BB</th><th>K</th><th>RBI</th><th>RUNS</th><th>SAC</th>
-              <th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+
+      <!-- Tab Navigation -->
+      <div class="tabs" id="tabNav"></div>
+
+      <!-- Season Stats Tab -->
+      <div class="tab-content active" data-tab="season">
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>PA</th><th>AB</th><th>H</th><th>1B</th><th>2B</th><th>3B</th><th>HR</th>
+                <th>TB</th><th>BB</th><th>K</th><th>RBI</th><th>RUNS</th><th>SAC</th>
+                <th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th>
+              </tr>
+            </thead>
+            <tbody id="seasonTbody"></tbody>
+          </table>
+        </div>
+        <p class="muted">Season totals across all games.</p>
       </div>
-      <p class="muted">Totals are calculated across all saved games/events on this device.</p>
+
+      <!-- Game Tabs (dynamically created) -->
+      <div id="gameTabsContainer"></div>
+
+      <p id="noData" class="muted" style="display:none; text-align:center; padding:40px 0;">No stats yet — play some games!</p>
     </section>
   </main>
   <script src="./app.js"></script>
   <script src="./stats.js"></script>
   <script>
-    function render(){
+    let activeTab = 'season';
+
+    function switchTab(tabId){
+      activeTab = tabId;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.dataset.tab === tabId));
+    }
+
+    function renderTabs(){
+      const games = App.getGames().sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
+      const tabNav = document.getElementById('tabNav');
+      tabNav.innerHTML = '';
+
+      // Season tab
+      const seasonBtn = document.createElement('button');
+      seasonBtn.className = 'tab-btn active';
+      seasonBtn.dataset.tab = 'season';
+      seasonBtn.textContent = 'Season Stats';
+      seasonBtn.addEventListener('click', ()=> switchTab('season'));
+      tabNav.appendChild(seasonBtn);
+
+      // Game tabs
+      games.forEach(g => {
+        const btn = document.createElement('button');
+        btn.className = 'tab-btn';
+        btn.dataset.tab = g.id;
+        btn.textContent = `${g.date||'?'} vs ${g.opponent||'?'}`;
+        btn.addEventListener('click', ()=> switchTab(g.id));
+        tabNav.appendChild(btn);
+      });
+    }
+
+    function renderSeasonStats(){
       const players = App.getPlayers();
       const events = App.getEvents();
       const byPlayer = Stats.groupByPlayer(events);
-      const tbody = document.querySelector("#totalsTable tbody");
-      tbody.innerHTML = "";
+      const tbody = document.getElementById('seasonTbody');
+      tbody.innerHTML = '';
+
+      let hasData = false;
       players
         .slice()
-        .sort((a,b)=> (a.name||"").localeCompare(b.name||""))
+        .sort((a,b)=> (a.name||'').localeCompare(b.name||''))
         .forEach(p=>{
           const evs = byPlayer[p.id] || [];
+          if(!evs.length) return;
+          hasData = true;
           const s = Stats.compute(evs);
-          const tr = document.createElement("tr");
+          const tr = document.createElement('tr');
           tr.innerHTML = `
             <td class="left">${App.escapeHtml(p.name)}</td>
             <td>${s.PA}</td><td>${s.AB}</td><td>${s.H}</td><td>${s.s1B}</td><td>${s.s2B}</td><td>${s.s3B}</td><td>${s.HR}</td>
@@ -61,18 +109,82 @@
           `;
           tbody.appendChild(tr);
         });
+
+      document.getElementById('noData').style.display = hasData ? 'none' : 'block';
     }
-    document.getElementById("exportBtn").addEventListener("click", ()=>{
+
+    function renderGameTabs(){
+      const games = App.getGames().sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
+      const container = document.getElementById('gameTabsContainer');
+      container.innerHTML = '';
+      const allEvents = App.getEvents();
+      const players = App.getPlayers();
+
+      games.forEach(game => {
+        const gameEvents = allEvents.filter(e => e.gameId === game.id);
+        if(!gameEvents.length) return;
+
+        const tabContent = document.createElement('div');
+        tabContent.className = 'tab-content';
+        tabContent.dataset.tab = game.id;
+
+        const byPlayer = Stats.groupByPlayer(gameEvents);
+
+        let tableHTML = `
+          <div class="game-header">
+            <h3>${game.date||'?'} vs ${game.opponent||'Opponent'}</h3>
+            ${game.location ? `<p class="muted">${game.location}</p>` : ''}
+          </div>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>Player</th>
+                  <th>PA</th><th>AB</th><th>H</th><th>1B</th><th>2B</th><th>3B</th><th>HR</th>
+                  <th>TB</th><th>BB</th><th>K</th><th>RBI</th><th>RUNS</th><th>SAC</th>
+                  <th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th>
+                </tr>
+              </thead>
+              <tbody>
+        `;
+
+        players
+          .slice()
+          .sort((a,b)=> (a.name||'').localeCompare(b.name||''))
+          .forEach(p => {
+            const evs = byPlayer[p.id];
+            if(!evs || !evs.length) return;
+            const s = Stats.compute(evs);
+            tableHTML += `
+              <tr>
+                <td class="left">${App.escapeHtml(p.name)}</td>
+                <td>${s.PA}</td><td>${s.AB}</td><td>${s.H}</td><td>${s.s1B}</td><td>${s.s2B}</td><td>${s.s3B}</td><td>${s.HR}</td>
+                <td>${s.TB}</td><td>${s.BB}</td><td>${s.K}</td><td>${s.RBI}</td><td>${s.RUNS}</td><td>${s.SAC}</td>
+                <td>${s.AVG}</td><td>${s.OBP}</td><td>${s.SLG}</td><td>${s.OPS}</td>
+              </tr>
+            `;
+          });
+
+        tableHTML += `</tbody></table></div>`;
+        tabContent.innerHTML = tableHTML;
+        container.appendChild(tabContent);
+      });
+    }
+
+    document.getElementById('exportBtn').addEventListener('click', ()=>{
       const payload = App.exportAll();
-      const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
+      const a = document.createElement('a');
       a.href = url;
       a.download = `stats-export-${Date.now()}.json`;
       a.click();
       URL.revokeObjectURL(url);
     });
-    render();
+
+    renderTabs();
+    renderSeasonStats();
+    renderGameTabs();
   </script>
 </body>
 </html>
