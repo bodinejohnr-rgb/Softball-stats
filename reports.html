@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>📊 Reports</h1>
+    <nav class="topnav">
+      <a href="./index.html">Home</a>
+      <a href="./lineup.html">Lineup</a>
+      <a href="./game.html">Logger</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <div class="row" style="justify-content:space-between; align-items:center;">
+        <h2>Season Totals</h2>
+        <button id="exportBtn" class="btn secondary">Export JSON</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="tbl" id="totalsTable">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>PA</th><th>AB</th><th>H</th><th>1B</th><th>2B</th><th>3B</th><th>HR</th>
+              <th>TB</th><th>BB</th><th>K</th><th>RBI</th><th>RUNS</th><th>SAC</th>
+              <th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <p class="muted">Totals are calculated across all saved games/events on this device.</p>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+  <script src="./stats.js"></script>
+  <script>
+    function render(){
+      const players = App.getPlayers();
+      const events = App.getEvents();
+      const byPlayer = Stats.groupByPlayer(events);
+
+      const tbody = document.querySelector("#totalsTable tbody");
+      tbody.innerHTML = "";
+
+      players
+        .slice()
+        .sort((a,b)=> (a.name||"").localeCompare(b.name||""))
+        .forEach(p=>{
+          const evs = byPlayer[p.id] || [];
+          const s = Stats.compute(evs);
+
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td class="left">${App.escapeHtml(p.name)}</td>
+            <td>${s.PA}</td><td>${s.AB}</td><td>${s.H}</td><td>${s.s1B}</td><td>${s.s2B}</td><td>${s.s3B}</td><td>${s.HR}</td>
+            <td>${s.TB}</td><td>${s.BB}</td><td>${s.K}</td><td>${s.RBI}</td><td>${s.RUNS}</td><td>${s.SAC}</td>
+            <td>${s.AVG}</td><td>${s.OBP}</td><td>${s.SLG}</td><td>${s.OPS}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+    }
+
+    document.getElementById("exportBtn").addEventListener("click", ()=>{
+      const payload = App.exportAll();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `stats-export-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    render();
+  </script>
+</body>
+</html>
