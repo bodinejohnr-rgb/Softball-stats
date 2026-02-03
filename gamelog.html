@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game Log</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>📋 Game Log</h1>
+    <nav class="topnav">
+      <a href="./index.html">Home</a>
+      <a href="./reports.html">Reports</a>
+    </nav>
+  </header>
+  <main class="container">
+    <section class="card">
+      <h2>All Games</h2>
+      <div id="gamesList"></div>
+      <p id="noGames" class="muted" style="display:none; text-align:center; padding:40px 0;">No games yet.</p>
+    </section>
+  </main>
+
+  <!-- Modal Dialog -->
+  <div class="modal" id="gameModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle"></h2>
+        <button class="modal-close" id="closeModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="modalMeta" class="muted"></p>
+        <div class="modal-actions">
+          <button class="btn secondary" id="viewGameBtn">View Stats</button>
+          <button class="btn ghost" id="editGameBtn">Edit Lineup</button>
+          <button class="btn danger" id="deleteGameBtn">Delete Game</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+  <script>
+    let selectedGameId = null;
+
+    function renderGames(){
+      const games = App.getGames().sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
+      const wrap = document.getElementById('gamesList');
+      wrap.innerHTML = '';
+
+      document.getElementById('noGames').style.display = games.length ? 'none' : 'block';
+
+      games.forEach(g => {
+        const card = document.createElement('div');
+        card.className = 'game-log-card';
+        card.innerHTML = `
+          <div class="glc-main">
+            <div class="glc-opponent">${App.escapeHtml(g.opponent || 'Opponent')}</div>
+            <div class="glc-meta">${App.escapeHtml(g.date || '')}${g.location ? ' • ' + App.escapeHtml(g.location) : ''}</div>
+          </div>
+        `;
+        card.addEventListener('click', ()=> openModal(g));
+        wrap.appendChild(card);
+      });
+    }
+
+    function openModal(game){
+      selectedGameId = game.id;
+      document.getElementById('modalTitle').textContent = game.opponent || 'Opponent';
+      document.getElementById('modalMeta').textContent = `${game.date||''}${game.location ? ' • ' + game.location : ''}`;
+      document.getElementById('gameModal').classList.add('show');
+    }
+
+    function closeModal(){
+      document.getElementById('gameModal').classList.remove('show');
+      selectedGameId = null;
+    }
+
+    document.getElementById('closeModal').addEventListener('click', closeModal);
+    document.getElementById('gameModal').addEventListener('click', (e)=>{
+      if(e.target.id === 'gameModal') closeModal();
+    });
+
+    document.getElementById('viewGameBtn').addEventListener('click', ()=>{
+      if(!selectedGameId) return;
+      closeModal();
+      window.location.href = `./reports.html`;
+    });
+
+    document.getElementById('editGameBtn').addEventListener('click', ()=>{
+      if(!selectedGameId) return;
+      App.setCurrentGameId(selectedGameId);
+      window.location.href = './lineup.html';
+    });
+
+    document.getElementById('deleteGameBtn').addEventListener('click', ()=>{
+      if(!selectedGameId) return;
+      if(!confirm('Delete this game? This will remove all stats and cannot be undone.')) return;
+      
+      const data = App.exportAll();
+      // Remove game
+      data.games = data.games.filter(g => g.id !== selectedGameId);
+      // Remove events
+      data.events = data.events.filter(e => e.gameId !== selectedGameId);
+      // Remove game state
+      if(data.gameState && data.gameState[selectedGameId]) delete data.gameState[selectedGameId];
+      // If this was current game, clear it
+      if(data.currentGameId === selectedGameId) data.currentGameId = null;
+      
+      localStorage.setItem('bstats_v1', JSON.stringify(data));
+      closeModal();
+      renderGames();
+    });
+
+    renderGames();
+  </script>
+</body>
+</html>
