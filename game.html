@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="win=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Game Logger</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
@@ -55,11 +55,6 @@
             <div id="rbiPicker" class="seg"></div>
           </div>
 
-          <div class="picker">
-            <div class="picker-label">RUNS</div>
-            <div id="runsPicker" class="seg"></div>
-          </div>
-
           <div class="row" style="margin-top:12px;">
             <button id="prevBatterBtn" class="btn ghost">← Previous</button>
             <button id="nextBatterBtn" class="btn primary">Next Batter →</button>
@@ -68,11 +63,29 @@
             <button id="finalBtn" class="btn danger">Finalize Game</button>
           </div>
 
-          <p class="muted">Select result, adjust RBI/RUNS/SAC, then tap Next Batter to save.</p>
+          <p class="muted">Select result, adjust RBI/SAC, then tap Next Batter to save.</p>
         </div>
       </div>
     </section>
   </main>
+
+  <!-- Runs Scored Popup -->
+  <div class="modal" id="runsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Who Scored?</h2>
+        <button class="modal-close" id="closeRunsModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted" style="margin-bottom:16px;">Select all players who scored on this plate appearance:</p>
+        <div id="runnersList"></div>
+        <div style="margin-top:20px; display:flex; gap:10px;">
+          <button class="btn primary" id="saveRunsBtn">Save & Continue</button>
+          <button class="btn ghost" id="skipRunsBtn">Skip</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="./app.js"></script>
   <script src="./stats.js"></script>
@@ -85,11 +98,10 @@
       `${game.date || ""} vs ${game.opponent || "Opponent"}` + (game.location ? ` • ${game.location}` : "");
 
     let sacOn = false;
-    let currentResult = null;  // tracks selected result (not saved yet)
+    let currentResult = null;
     let currentRBI = 0;
-    let currentRUNS = 0;
+    let pendingScorerIds = []; // who scored (set in popup)
 
-    // map batter index -> event ID for previously saved PAs
     let batterEventMap = {};
 
     function loadBatterEventMap(){
@@ -97,12 +109,9 @@
       const lineup = App.getLineup(gameId);
       const events = App.getEvents().filter(e => e.gameId === gameId);
       
-      // Build a map: for each batter position, store the most recent event ID
-      // We'll use a simple approach: group events by playerId, then associate with lineup index
       lineup.forEach((playerId, idx) => {
         const playerEvents = events.filter(e => e.playerId === playerId);
         if(playerEvents.length > 0){
-          // Get the most recent event for this player in this game
           const sorted = playerEvents.sort((a,b)=> (b.ts||0)-(a.ts||0));
           batterEventMap[idx] = sorted[0].id;
         }
@@ -148,15 +157,12 @@
       document.getElementById("batterName").textContent = p?.name || "Unknown";
       document.getElementById("batterSpot").textContent = `Spot: ${idx+1} of ${lineup.length}`;
       
-      // Load any existing event for this batter position
       loadPreviousPA(idx);
     }
 
     function loadPreviousPA(batterIdx){
-      // Check if this batter already has a saved PA
       const eventId = batterEventMap[batterIdx];
       if(!eventId){
-        // No previous PA - clear selection
         clearSelection();
         return;
       }
@@ -167,28 +173,23 @@
         return;
       }
 
-      // Load the saved PA into current selection
       currentResult = ev.result;
       currentRBI = ev.rbi || 0;
-      currentRUNS = ev.runs || 0;
       sacOn = ev.sac || false;
 
-      // Update UI
       highlightResult(currentResult);
       setSegValue("rbiPicker", currentRBI);
-      setSegValue("runsPicker", currentRUNS);
       renderSac();
     }
 
     function clearSelection(){
       currentResult = null;
       currentRBI = 0;
-      currentRUNS = 0;
       sacOn = false;
+      pendingScorerIds = [];
       
       document.querySelectorAll(".big").forEach(b => b.classList.remove("selected"));
       setSegValue("rbiPicker", 0);
-      setSegValue("runsPicker", 0);
       renderSac();
     }
 
@@ -203,17 +204,11 @@
       document.getElementById("sacBtn").classList.toggle("on", sacOn);
     }
 
-    // build pickers
     makeSeg("rbiPicker", (v)=>{
       currentRBI = v;
       setSegValue("rbiPicker", v);
     });
-    makeSeg("runsPicker", (v)=>{
-      currentRUNS = v;
-      setSegValue("runsPicker", v);
-    });
 
-    // result buttons: just select (don't save yet)
     document.querySelectorAll("[data-res]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         currentResult = btn.dataset.res;
@@ -231,33 +226,79 @@
       clearSelection();
     });
 
-    document.getElementById("nextBatterBtn").addEventListener("click", ()=>{
+    function openRunsModal(){
+      const lineup = App.getLineup(gameId);
+      const wrap = document.getElementById("runnersList");
+      wrap.innerHTML = "";
+
+      lineup.forEach(playerId => {
+        const p = App.getPlayer(playerId);
+        const label = document.createElement("label");
+        label.className = "runner-checkbox";
+        label.innerHTML = `
+          <input type="checkbox" data-player="${playerId}" />
+          <span>${App.escapeHtml(p?.name || "Unknown")}</span>
+        `;
+        wrap.appendChild(label);
+      });
+
+      document.getElementById("runsModal").classList.add("show");
+    }
+
+    function closeRunsModal(){
+      document.getElementById("runsModal").classList.remove("show");
+      pendingScorerIds = [];
+    }
+
+    document.getElementById("closeRunsModal").addEventListener("click", closeRunsModal);
+    document.getElementById("runsModal").addEventListener("click", (e)=>{
+      if(e.target.id === "runsModal") closeRunsModal();
+    });
+
+    document.getElementById("skipRunsBtn").addEventListener("click", ()=>{
+      pendingScorerIds = [];
+      closeRunsModal();
+      finalizePAAndAdvance();
+    });
+
+    document.getElementById("saveRunsBtn").addEventListener("click", ()=>{
+      const checked = document.querySelectorAll("#runnersList input:checked");
+      pendingScorerIds = Array.from(checked).map(cb => cb.dataset.player);
+      closeRunsModal();
+      finalizePAAndAdvance();
+    });
+
+    function finalizePAAndAdvance(){
       const { idx, playerId } = getCurrentBatter();
       
-      if(!currentResult){
-        alert("Please select a result first.");
-        return;
-      }
-
       if(!playerId){
         alert("Lineup is empty. Go back to Lineup.");
         return;
       }
 
-      // Check if there's already a saved PA for this batter
+      // Update runs for each scorer
+      const allEvents = App.getEvents();
+      pendingScorerIds.forEach(scorerId => {
+        // Find most recent event for this player in this game
+        const playerEvents = allEvents.filter(e => e.gameId === gameId && e.playerId === scorerId).sort((a,b)=>(b.ts||0)-(a.ts||0));
+        if(playerEvents.length > 0){
+          const latestEvent = playerEvents[0];
+          App.updateEvent(latestEvent.id, { runs: (latestEvent.runs || 0) + 1 });
+        }
+      });
+
+      // Save current batter's PA
       const existingEventId = batterEventMap[idx];
       
       if(existingEventId){
-        // Update existing event
         App.updateEvent(existingEventId, {
           result: currentResult,
           outType: currentResult === "K" ? "K" : null,
           sac: sacOn && currentResult === "OUT",
           rbi: currentRBI,
-          runs: currentRUNS
+          runs: 0  // runs are handled separately via the popup
         });
       } else {
-        // Create new event
         const ev = App.addEvent({
           gameId,
           playerId,
@@ -265,15 +306,28 @@
           outType: currentResult === "K" ? "K" : null,
           sac: sacOn && currentResult === "OUT",
           rbi: currentRBI,
-          runs: currentRUNS
+          runs: 0
         });
         batterEventMap[idx] = ev.id;
       }
 
-      // Advance to next batter
       App.advanceBatter(gameId);
       clearSelection();
       renderBatter();
+    }
+
+    document.getElementById("nextBatterBtn").addEventListener("click", ()=>{
+      if(!currentResult){
+        alert("Please select a result first.");
+        return;
+      }
+
+      // If RBI > 0, show runs popup
+      if(currentRBI > 0){
+        openRunsModal();
+      } else {
+        finalizePAAndAdvance();
+      }
     });
 
     document.getElementById("prevBatterBtn").addEventListener("click", ()=>{
@@ -295,7 +349,6 @@
       window.location.href = "./reports.html";
     });
 
-    // init state if needed
     App.initGameState(gameId);
     loadBatterEventMap();
     renderSac();
