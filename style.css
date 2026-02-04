@@ -315,3 +315,18 @@ input[type="date"]::-webkit-calendar-picker-indicator{ filter:invert(0.7); curso
   accent-color:var(--blue);
 }
 .runner-checkbox span{ font-size:15px; font-weight:600; }
+
+/* scorers list */
+.scorers-list{ max-height:200px; overflow-y:auto; margin-top:8px; }
+.scorer-checkbox{
+  display:flex; align-items:center; gap:10px;
+  padding:8px 10px; border-radius:6px;
+  cursor:pointer; transition:background .2s;
+  margin-bottom:4px;
+}
+.scorer-checkbox:hover{ background:var(--card); }
+.scorer-checkbox input[type="checkbox"]{
+  width:16px; height:16px; cursor:pointer;
+  accent-color:var(--blue);
+}
+.scorer-checkbox span{ font-size:14px; font-weight:600; }
