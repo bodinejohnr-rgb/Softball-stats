@@ -55,6 +55,11 @@
             <div id="rbiPicker" class="seg"></div>
           </div>
 
+          <div class="picker">
+            <div class="picker-label">WHO SCORED?</div>
+            <div id="scorersList" class="scorers-list"></div>
+          </div>
+
           <div class="row" style="margin-top:12px;">
             <button id="prevBatterBtn" class="btn ghost">← Previous</button>
             <button id="nextBatterBtn" class="btn primary">Next Batter →</button>
@@ -63,29 +68,11 @@
             <button id="finalBtn" class="btn danger">Finalize Game</button>
           </div>
 
-          <p class="muted">Select result, adjust RBI/SAC, then tap Next Batter to save.</p>
+          <p class="muted">Select result, adjust RBI/SAC, mark who scored, then tap Next Batter.</p>
         </div>
       </div>
     </section>
   </main>
-
-  <!-- Runs Scored Popup -->
-  <div class="modal" id="runsModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Who Scored?</h2>
-        <button class="modal-close" id="closeRunsModal">✕</button>
-      </div>
-      <div class="modal-body">
-        <p class="muted" style="margin-bottom:16px;">Select all players who scored on this plate appearance:</p>
-        <div id="runnersList"></div>
-        <div style="margin-top:20px; display:flex; gap:10px;">
-          <button class="btn primary" id="saveRunsBtn">Save & Continue</button>
-          <button class="btn ghost" id="skipRunsBtn">Skip</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <script src="./app.js"></script>
   <script src="./stats.js"></script>
@@ -100,7 +87,7 @@
     let sacOn = false;
     let currentResult = null;
     let currentRBI = 0;
-    let pendingScorerIds = []; // who scored (set in popup)
+    let scorerIds = [];
 
     let batterEventMap = {};
 
@@ -151,12 +138,37 @@
       return { lineup, idx, playerId: lineup[idx] };
     }
 
+    function renderScorersList(){
+      const lineup = App.getLineup(gameId);
+      const wrap = document.getElementById("scorersList");
+      wrap.innerHTML = "";
+
+      lineup.forEach(playerId => {
+        const p = App.getPlayer(playerId);
+        const label = document.createElement("label");
+        label.className = "scorer-checkbox";
+        const isChecked = scorerIds.includes(playerId);
+        label.innerHTML = `
+          <input type="checkbox" data-player="${playerId}" ${isChecked ? 'checked' : ''} />
+          <span>${App.escapeHtml(p?.name || "Unknown")}</span>
+        `;
+        label.querySelector('input').addEventListener('change', updateScorers);
+        wrap.appendChild(label);
+      });
+    }
+
+    function updateScorers(){
+      const checked = document.querySelectorAll("#scorersList input:checked");
+      scorerIds = Array.from(checked).map(cb => cb.dataset.player);
+    }
+
     function renderBatter(){
       const { lineup, idx, playerId } = getCurrentBatter();
       const p = App.getPlayer(playerId);
       document.getElementById("batterName").textContent = p?.name || "Unknown";
       document.getElementById("batterSpot").textContent = `Spot: ${idx+1} of ${lineup.length}`;
       
+      renderScorersList();
       loadPreviousPA(idx);
     }
 
@@ -176,21 +188,24 @@
       currentResult = ev.result;
       currentRBI = ev.rbi || 0;
       sacOn = ev.sac || false;
+      scorerIds = [];
 
       highlightResult(currentResult);
       setSegValue("rbiPicker", currentRBI);
       renderSac();
+      renderScorersList();
     }
 
     function clearSelection(){
       currentResult = null;
       currentRBI = 0;
       sacOn = false;
-      pendingScorerIds = [];
+      scorerIds = [];
       
       document.querySelectorAll(".big").forEach(b => b.classList.remove("selected"));
       setSegValue("rbiPicker", 0);
       renderSac();
+      renderScorersList();
     }
 
     function highlightResult(res){
@@ -226,49 +241,12 @@
       clearSelection();
     });
 
-    function openRunsModal(){
-      const lineup = App.getLineup(gameId);
-      const wrap = document.getElementById("runnersList");
-      wrap.innerHTML = "";
+    document.getElementById("nextBatterBtn").addEventListener("click", ()=>{
+      if(!currentResult){
+        alert("Please select a result first.");
+        return;
+      }
 
-      lineup.forEach(playerId => {
-        const p = App.getPlayer(playerId);
-        const label = document.createElement("label");
-        label.className = "runner-checkbox";
-        label.innerHTML = `
-          <input type="checkbox" data-player="${playerId}" />
-          <span>${App.escapeHtml(p?.name || "Unknown")}</span>
-        `;
-        wrap.appendChild(label);
-      });
-
-      document.getElementById("runsModal").classList.add("show");
-    }
-
-    function closeRunsModal(){
-      document.getElementById("runsModal").classList.remove("show");
-      pendingScorerIds = [];
-    }
-
-    document.getElementById("closeRunsModal").addEventListener("click", closeRunsModal);
-    document.getElementById("runsModal").addEventListener("click", (e)=>{
-      if(e.target.id === "runsModal") closeRunsModal();
-    });
-
-    document.getElementById("skipRunsBtn").addEventListener("click", ()=>{
-      pendingScorerIds = [];
-      closeRunsModal();
-      finalizePAAndAdvance();
-    });
-
-    document.getElementById("saveRunsBtn").addEventListener("click", ()=>{
-      const checked = document.querySelectorAll("#runnersList input:checked");
-      pendingScorerIds = Array.from(checked).map(cb => cb.dataset.player);
-      closeRunsModal();
-      finalizePAAndAdvance();
-    });
-
-    function finalizePAAndAdvance(){
       const { idx, playerId } = getCurrentBatter();
       
       if(!playerId){
@@ -278,8 +256,7 @@
 
       // Update runs for each scorer
       const allEvents = App.getEvents();
-      pendingScorerIds.forEach(scorerId => {
-        // Find most recent event for this player in this game
+      scorerIds.forEach(scorerId => {
         const playerEvents = allEvents.filter(e => e.gameId === gameId && e.playerId === scorerId).sort((a,b)=>(b.ts||0)-(a.ts||0));
         if(playerEvents.length > 0){
           const latestEvent = playerEvents[0];
@@ -296,7 +273,7 @@
           outType: currentResult === "K" ? "K" : null,
           sac: sacOn && currentResult === "OUT",
           rbi: currentRBI,
-          runs: 0  // runs are handled separately via the popup
+          runs: 0
         });
       } else {
         const ev = App.addEvent({
@@ -314,20 +291,6 @@
       App.advanceBatter(gameId);
       clearSelection();
       renderBatter();
-    }
-
-    document.getElementById("nextBatterBtn").addEventListener("click", ()=>{
-      if(!currentResult){
-        alert("Please select a result first.");
-        return;
-      }
-
-      // If RBI > 0, show runs popup
-      if(currentRBI > 0){
-        openRunsModal();
-      } else {
-        finalizePAAndAdvance();
-      }
     });
 
     document.getElementById("prevBatterBtn").addEventListener("click", ()=>{
