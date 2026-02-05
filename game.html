@@ -89,20 +89,29 @@
     let currentRBI = 0;
     let scorerIds = [];
 
-    let batterEventMap = {};
+    // Track the current PA event ID (the one we're editing/creating)
+    let currentPAEventId = null;
+    
+    // Ordered list of all PA event IDs in chronological order
+    let paHistory = [];
 
-    function loadBatterEventMap(){
-      batterEventMap = {};
-      const lineup = App.getLineup(gameId);
-      const events = App.getEvents().filter(e => e.gameId === gameId);
+    function loadPAHistory(){
+      // Get all events for this game in chronological order
+      const events = App.getEvents()
+        .filter(e => e.gameId === gameId)
+        .sort((a,b)=> (a.ts||0)-(b.ts||0));
       
-      lineup.forEach((playerId, idx) => {
-        const playerEvents = events.filter(e => e.playerId === playerId);
-        if(playerEvents.length > 0){
-          const sorted = playerEvents.sort((a,b)=> (b.ts||0)-(a.ts||0));
-          batterEventMap[idx] = sorted[0].id;
-        }
-      });
+      paHistory = events.map(e => e.id);
+    }
+
+    function getCurrentPAIndex(){
+      // Get current batter position from game state
+      const st = App.getGameState(gameId);
+      return st.paIndex || 0;
+    }
+
+    function setCurrentPAIndex(idx){
+      App.setGameState(gameId, { paIndex: idx });
     }
 
     function makeSeg(elId, onPick){
@@ -132,10 +141,18 @@
     }
 
     function getCurrentBatter(){
-      const st = App.getGameState(gameId);
       const lineup = App.getLineup(gameId);
-      const idx = Math.max(0, Math.min(st.batterIndex || 0, lineup.length-1));
-      return { lineup, idx, playerId: lineup[idx] };
+      if(!lineup.length) return { lineup, idx: 0, playerId: null };
+      
+      const paIndex = getCurrentPAIndex();
+      const lineupIdx = paIndex % lineup.length;
+      
+      return { 
+        lineup, 
+        idx: lineupIdx, 
+        playerId: lineup[lineupIdx],
+        paNumber: Math.floor(paIndex / lineup.length) + 1
+      };
     }
 
     function renderScorersList(){
@@ -163,32 +180,39 @@
     }
 
     function renderBatter(){
-      const { lineup, idx, playerId } = getCurrentBatter();
+      const { lineup, idx, playerId, paNumber } = getCurrentBatter();
       const p = App.getPlayer(playerId);
       document.getElementById("batterName").textContent = p?.name || "Unknown";
-      document.getElementById("batterSpot").textContent = `Spot: ${idx+1} of ${lineup.length}`;
+      document.getElementById("batterSpot").textContent = `Spot: ${idx+1} • PA #${paNumber}`;
       
       renderScorersList();
-      loadPreviousPA(idx);
+      loadCurrentPA();
     }
 
-    function loadPreviousPA(batterIdx){
-      const eventId = batterEventMap[batterIdx];
+    function loadCurrentPA(){
+      const paIndex = getCurrentPAIndex();
+      const eventId = paHistory[paIndex];
+      
       if(!eventId){
+        // No event exists yet for this PA - clear selection
         clearSelection();
+        currentPAEventId = null;
         return;
       }
 
       const ev = App.getEvent(eventId);
       if(!ev){
         clearSelection();
+        currentPAEventId = null;
         return;
       }
 
+      // Load the saved PA
       currentResult = ev.result;
       currentRBI = ev.rbi || 0;
       sacOn = ev.sac || false;
       scorerIds = [];
+      currentPAEventId = eventId;
 
       highlightResult(currentResult);
       setSegValue("rbiPicker", currentRBI);
@@ -247,7 +271,7 @@
         return;
       }
 
-      const { idx, playerId } = getCurrentBatter();
+      const { playerId } = getCurrentBatter();
       
       if(!playerId){
         alert("Lineup is empty. Go back to Lineup.");
@@ -257,18 +281,19 @@
       // Update runs for each scorer
       const allEvents = App.getEvents();
       scorerIds.forEach(scorerId => {
-        const playerEvents = allEvents.filter(e => e.gameId === gameId && e.playerId === scorerId).sort((a,b)=>(b.ts||0)-(a.ts||0));
+        const playerEvents = allEvents
+          .filter(e => e.gameId === gameId && e.playerId === scorerId)
+          .sort((a,b)=>(b.ts||0)-(a.ts||0));
         if(playerEvents.length > 0){
           const latestEvent = playerEvents[0];
           App.updateEvent(latestEvent.id, { runs: (latestEvent.runs || 0) + 1 });
         }
       });
 
-      // Save current batter's PA
-      const existingEventId = batterEventMap[idx];
-      
-      if(existingEventId){
-        App.updateEvent(existingEventId, {
+      // Save or update current PA
+      if(currentPAEventId){
+        // Update existing event
+        App.updateEvent(currentPAEventId, {
           result: currentResult,
           outType: currentResult === "K" ? "K" : null,
           sac: sacOn && currentResult === "OUT",
@@ -276,6 +301,7 @@
           runs: 0
         });
       } else {
+        // Create new event
         const ev = App.addEvent({
           gameId,
           playerId,
@@ -285,23 +311,25 @@
           rbi: currentRBI,
           runs: 0
         });
-        batterEventMap[idx] = ev.id;
+        
+        // Add to history
+        const paIndex = getCurrentPAIndex();
+        paHistory[paIndex] = ev.id;
       }
 
-      App.advanceBatter(gameId);
+      // Advance to next PA
+      const nextPAIndex = getCurrentPAIndex() + 1;
+      setCurrentPAIndex(nextPAIndex);
+      
       clearSelection();
       renderBatter();
     });
 
     document.getElementById("prevBatterBtn").addEventListener("click", ()=>{
-      const lineup = App.getLineup(gameId);
-      if(!lineup.length) return;
+      const paIndex = getCurrentPAIndex();
+      if(paIndex <= 0) return; // Can't go before first PA
       
-      const st = App.getGameState(gameId);
-      const currentIdx = st.batterIndex || 0;
-      const prevIdx = (currentIdx - 1 + lineup.length) % lineup.length;
-      
-      App.setGameState(gameId, { batterIndex: prevIdx });
+      setCurrentPAIndex(paIndex - 1);
       clearSelection();
       renderBatter();
     });
@@ -312,8 +340,9 @@
       window.location.href = "./reports.html";
     });
 
+    // Initialize
     App.initGameState(gameId);
-    loadBatterEventMap();
+    loadPAHistory();
     renderSac();
     renderBatter();
   </script>
