@@ -59,22 +59,22 @@
           <div class="picker">
             <div class="picker-label">BASES</div>
             <div class="base-diamond">
-              <div class="base base-2b" data-base="2B" id="base2B">
+              <div class="base base-2b" data-base="2B" id="base2B" draggable="false">
                 <span class="base-label">2B</span>
-                <span class="base-runner" id="runner2B"></span>
+                <span class="base-runner" id="runner2B" draggable="false"></span>
               </div>
               <div class="base-row">
-                <div class="base base-3b" data-base="3B" id="base3B">
+                <div class="base base-3b" data-base="3B" id="base3B" draggable="false">
                   <span class="base-label">3B</span>
-                  <span class="base-runner" id="runner3B"></span>
+                  <span class="base-runner" id="runner3B" draggable="false"></span>
                 </div>
-                <div class="base base-1b" data-base="1B" id="base1B">
+                <div class="base base-1b" data-base="1B" id="base1B" draggable="false">
                   <span class="base-label">1B</span>
-                  <span class="base-runner" id="runner1B"></span>
+                  <span class="base-runner" id="runner1B" draggable="false"></span>
                 </div>
               </div>
             </div>
-            <p class="muted" style="margin-top:8px; font-size:12px;">Click a base to add/remove runners</p>
+            <p class="muted" style="margin-top:8px; font-size:12px;">Click to add/remove • Drag to move runners</p>
           </div>
 
           <div class="picker">
@@ -125,9 +125,10 @@
     let currentRBI = 0;
     let scorerIds = [];
 
-    // Base state: { "1B": playerId, "2B": playerId, "3B": playerId }
     let bases = { "1B": null, "2B": null, "3B": null };
-    let selectedBase = null; // for modal
+    let selectedBase = null;
+    let draggedPlayerId = null;
+    let dragSourceBase = null;
 
     let currentPAEventId = null;
     let paHistory = [];
@@ -199,19 +200,145 @@
           const p = App.getPlayer(playerId);
           runnerEl.textContent = (p?.name || "?").substring(0, 8);
           baseEl.classList.add("occupied");
+          runnerEl.draggable = true;
+          runnerEl.dataset.playerId = playerId;
+          runnerEl.dataset.base = base;
         } else {
           runnerEl.textContent = "";
           baseEl.classList.remove("occupied");
+          runnerEl.draggable = false;
+          delete runnerEl.dataset.playerId;
+          delete runnerEl.dataset.base;
         }
       });
     }
+
+    function advanceRunners(result){
+      const { playerId } = getCurrentBatter();
+      let scored = [];
+
+      if(result === "1B"){
+        // Single: advance all 1 base
+        if(bases["3B"]) scored.push(bases["3B"]);
+        bases["3B"] = bases["2B"];
+        bases["2B"] = bases["1B"];
+        bases["1B"] = playerId;
+      } else if(result === "2B"){
+        // Double: advance all 2 bases
+        if(bases["3B"]) scored.push(bases["3B"]);
+        if(bases["2B"]) scored.push(bases["2B"]);
+        bases["3B"] = bases["1B"];
+        bases["2B"] = playerId;
+        bases["1B"] = null;
+      } else if(result === "3B"){
+        // Triple: everyone scores
+        if(bases["1B"]) scored.push(bases["1B"]);
+        if(bases["2B"]) scored.push(bases["2B"]);
+        if(bases["3B"]) scored.push(bases["3B"]);
+        bases["3B"] = playerId;
+        bases["2B"] = null;
+        bases["1B"] = null;
+      } else if(result === "HR"){
+        // Home run: everyone scores including batter
+        if(bases["1B"]) scored.push(bases["1B"]);
+        if(bases["2B"]) scored.push(bases["2B"]);
+        if(bases["3B"]) scored.push(bases["3B"]);
+        scored.push(playerId);
+        bases["1B"] = null;
+        bases["2B"] = null;
+        bases["3B"] = null;
+      } else if(result === "BB"){
+        // Walk: force advancement logic
+        const has1B = !!bases["1B"];
+        const has2B = !!bases["2B"];
+        const has3B = !!bases["3B"];
+
+        if(has1B && has2B && has3B){
+          // Bases loaded: force home
+          scored.push(bases["3B"]);
+          bases["3B"] = bases["2B"];
+          bases["2B"] = bases["1B"];
+          bases["1B"] = playerId;
+        } else if(has1B && has2B && !has3B){
+          // 1B + 2B: force to 3B
+          bases["3B"] = bases["2B"];
+          bases["2B"] = bases["1B"];
+          bases["1B"] = playerId;
+        } else if(has1B && !has2B){
+          // Only 1B: force to 2B
+          bases["2B"] = bases["1B"];
+          bases["1B"] = playerId;
+        } else {
+          // No force (2B only, 3B only, 2B+3B, or empty)
+          bases["1B"] = playerId;
+        }
+      }
+
+      // Auto-check scored runners
+      scored.forEach(id => {
+        if(!scorerIds.includes(id)) scorerIds.push(id);
+      });
+
+      renderBases();
+      renderScorersList();
+    }
+
+    // Drag and drop
+    document.addEventListener("dragstart", (e)=>{
+      if(e.target.classList.contains("base-runner") && e.target.dataset.playerId){
+        draggedPlayerId = e.target.dataset.playerId;
+        dragSourceBase = e.target.dataset.base;
+        e.target.style.opacity = "0.5";
+      }
+    });
+
+    document.addEventListener("dragend", (e)=>{
+      if(e.target.classList.contains("base-runner")){
+        e.target.style.opacity = "1";
+        draggedPlayerId = null;
+        dragSourceBase = null;
+      }
+    });
+
+    document.querySelectorAll(".base").forEach(baseEl => {
+      baseEl.addEventListener("dragover", (e)=>{
+        e.preventDefault();
+      });
+
+      baseEl.addEventListener("drop", (e)=>{
+        e.preventDefault();
+        if(!draggedPlayerId || !dragSourceBase) return;
+
+        const targetBase = baseEl.dataset.base;
+        
+        // Move runner from source to target
+        if(bases[targetBase]){
+          // Swap if target is occupied
+          const temp = bases[targetBase];
+          bases[targetBase] = draggedPlayerId;
+          bases[dragSourceBase] = temp;
+        } else {
+          // Just move
+          bases[targetBase] = draggedPlayerId;
+          bases[dragSourceBase] = null;
+        }
+
+        renderBases();
+      });
+
+      // Click to add/remove (original functionality)
+      baseEl.addEventListener("click", (e)=>{
+        // Don't trigger if we just finished dragging
+        if(e.target.classList.contains("base-runner")) return;
+        openBaseModal(baseEl.dataset.base);
+      });
+    });
 
     function openBaseModal(base){
       selectedBase = base;
       const currentRunner = bases[base];
       
       if(currentRunner){
-        // Show option to remove
         document.getElementById("baseModalTitle").textContent = `${base} - Remove Runner?`;
         const list = document.getElementById("baseRunnerList");
         list.innerHTML = "";
@@ -229,7 +356,6 @@
         });
         list.appendChild(removeBtn);
       } else {
-        // Show lineup to add
         document.getElementById("baseModalTitle").textContent = `${base} - Add Runner`;
         const list = document.getElementById("baseRunnerList");
         list.innerHTML = "";
@@ -264,18 +390,10 @@
       if(e.target.id === "baseModal") closeBaseModal();
     });
 
-    // Base click handlers
-    document.querySelectorAll(".base").forEach(baseEl => {
-      baseEl.addEventListener("click", ()=>{
-        openBaseModal(baseEl.dataset.base);
-      });
-    });
-
     function renderScorersList(){
       const wrap = document.getElementById("scorersList");
       wrap.innerHTML = "";
 
-      // Only show players on base
       const runnersOnBase = Object.values(bases).filter(id => id !== null);
       
       if(runnersOnBase.length === 0){
@@ -300,6 +418,23 @@
     function updateScorers(){
       const checked = document.querySelectorAll("#scorersList input:checked");
       scorerIds = Array.from(checked).map(cb => cb.dataset.player);
+      
+      // If someone is unchecked, add them back to 3B (user can move them)
+      const allRunners = Object.values(bases).filter(id => id !== null);
+      allRunners.forEach(runnerId => {
+        if(!scorerIds.includes(runnerId)){
+          // Check if they're still on base somewhere
+          let onBase = false;
+          ["1B","2B","3B"].forEach(b => {
+            if(bases[b] === runnerId) onBase = true;
+          });
+          // If not on base, put back on 3B
+          if(!onBase && !bases["3B"]){
+            bases["3B"] = runnerId;
+            renderBases();
+          }
+        }
+      });
     }
 
     function renderBatter(){
@@ -374,6 +509,11 @@
         currentResult = btn.dataset.res;
         highlightResult(currentResult);
         showSelected();
+        
+        // Auto-advance runners based on result
+        if(["1B","2B","3B","HR","BB"].includes(currentResult)){
+          advanceRunners(currentResult);
+        }
       });
     });
 
@@ -440,7 +580,6 @@
         paHistory[paIndex] = ev.id;
       }
 
-      // Advance to next PA
       const nextPAIndex = getCurrentPAIndex() + 1;
       setCurrentPAIndex(nextPAIndex);
       
