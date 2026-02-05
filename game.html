@@ -55,9 +55,32 @@
             <div id="rbiPicker" class="seg"></div>
           </div>
 
+          <!-- Base Diagram -->
+          <div class="picker">
+            <div class="picker-label">BASES</div>
+            <div class="base-diamond">
+              <div class="base base-2b" data-base="2B" id="base2B">
+                <span class="base-label">2B</span>
+                <span class="base-runner" id="runner2B"></span>
+              </div>
+              <div class="base-row">
+                <div class="base base-3b" data-base="3B" id="base3B">
+                  <span class="base-label">3B</span>
+                  <span class="base-runner" id="runner3B"></span>
+                </div>
+                <div class="base base-1b" data-base="1B" id="base1B">
+                  <span class="base-label">1B</span>
+                  <span class="base-runner" id="runner1B"></span>
+                </div>
+              </div>
+            </div>
+            <p class="muted" style="margin-top:8px; font-size:12px;">Click a base to add/remove runners</p>
+          </div>
+
           <div class="picker">
             <div class="picker-label">WHO SCORED?</div>
             <div id="scorersList" class="scorers-list"></div>
+            <p class="muted" style="margin-top:6px; font-size:12px;" id="scorersHint">Only players on base can score</p>
           </div>
 
           <div class="row" style="margin-top:12px;">
@@ -68,11 +91,24 @@
             <button id="finalBtn" class="btn danger">Finalize Game</button>
           </div>
 
-          <p class="muted">Select result, adjust RBI/SAC, mark who scored, then tap Next Batter.</p>
+          <p class="muted">Select result, adjust bases/RBI, mark who scored, then tap Next Batter.</p>
         </div>
       </div>
     </section>
   </main>
+
+  <!-- Base Runner Popup -->
+  <div class="modal" id="baseModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="baseModalTitle">Select Runner</h2>
+        <button class="modal-close" id="closeBaseModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="baseRunnerList"></div>
+      </div>
+    </div>
+  </div>
 
   <script src="./app.js"></script>
   <script src="./stats.js"></script>
@@ -89,23 +125,21 @@
     let currentRBI = 0;
     let scorerIds = [];
 
-    // Track the current PA event ID (the one we're editing/creating)
+    // Base state: { "1B": playerId, "2B": playerId, "3B": playerId }
+    let bases = { "1B": null, "2B": null, "3B": null };
+    let selectedBase = null; // for modal
+
     let currentPAEventId = null;
-    
-    // Ordered list of all PA event IDs in chronological order
     let paHistory = [];
 
     function loadPAHistory(){
-      // Get all events for this game in chronological order
       const events = App.getEvents()
         .filter(e => e.gameId === gameId)
         .sort((a,b)=> (a.ts||0)-(b.ts||0));
-      
       paHistory = events.map(e => e.id);
     }
 
     function getCurrentPAIndex(){
-      // Get current batter position from game state
       const st = App.getGameState(gameId);
       return st.paIndex || 0;
     }
@@ -155,12 +189,101 @@
       };
     }
 
+    function renderBases(){
+      ["1B", "2B", "3B"].forEach(base => {
+        const playerId = bases[base];
+        const runnerEl = document.getElementById(`runner${base}`);
+        const baseEl = document.getElementById(`base${base}`);
+        
+        if(playerId){
+          const p = App.getPlayer(playerId);
+          runnerEl.textContent = (p?.name || "?").substring(0, 8);
+          baseEl.classList.add("occupied");
+        } else {
+          runnerEl.textContent = "";
+          baseEl.classList.remove("occupied");
+        }
+      });
+    }
+
+    function openBaseModal(base){
+      selectedBase = base;
+      const currentRunner = bases[base];
+      
+      if(currentRunner){
+        // Show option to remove
+        document.getElementById("baseModalTitle").textContent = `${base} - Remove Runner?`;
+        const list = document.getElementById("baseRunnerList");
+        list.innerHTML = "";
+        
+        const p = App.getPlayer(currentRunner);
+        const removeBtn = document.createElement("button");
+        removeBtn.className = "btn danger";
+        removeBtn.style.width = "100%";
+        removeBtn.textContent = `Remove ${p?.name || "Unknown"}`;
+        removeBtn.addEventListener("click", ()=>{
+          bases[base] = null;
+          closeBaseModal();
+          renderBases();
+          renderScorersList();
+        });
+        list.appendChild(removeBtn);
+      } else {
+        // Show lineup to add
+        document.getElementById("baseModalTitle").textContent = `${base} - Add Runner`;
+        const list = document.getElementById("baseRunnerList");
+        list.innerHTML = "";
+        
+        const lineup = App.getLineup(gameId);
+        lineup.forEach(playerId => {
+          const p = App.getPlayer(playerId);
+          const btn = document.createElement("button");
+          btn.className = "list-item";
+          btn.style.marginBottom = "6px";
+          btn.innerHTML = `<span style="font-weight:700;">${App.escapeHtml(p?.name || "Unknown")}</span>`;
+          btn.addEventListener("click", ()=>{
+            bases[base] = playerId;
+            closeBaseModal();
+            renderBases();
+            renderScorersList();
+          });
+          list.appendChild(btn);
+        });
+      }
+      
+      document.getElementById("baseModal").classList.add("show");
+    }
+
+    function closeBaseModal(){
+      document.getElementById("baseModal").classList.remove("show");
+      selectedBase = null;
+    }
+
+    document.getElementById("closeBaseModal").addEventListener("click", closeBaseModal);
+    document.getElementById("baseModal").addEventListener("click", (e)=>{
+      if(e.target.id === "baseModal") closeBaseModal();
+    });
+
+    // Base click handlers
+    document.querySelectorAll(".base").forEach(baseEl => {
+      baseEl.addEventListener("click", ()=>{
+        openBaseModal(baseEl.dataset.base);
+      });
+    });
+
     function renderScorersList(){
-      const lineup = App.getLineup(gameId);
       const wrap = document.getElementById("scorersList");
       wrap.innerHTML = "";
 
-      lineup.forEach(playerId => {
+      // Only show players on base
+      const runnersOnBase = Object.values(bases).filter(id => id !== null);
+      
+      if(runnersOnBase.length === 0){
+        wrap.innerHTML = '<p class="muted" style="font-size:13px;">No runners on base</p>';
+        return;
+      }
+
+      runnersOnBase.forEach(playerId => {
         const p = App.getPlayer(playerId);
         const label = document.createElement("label");
         label.className = "scorer-checkbox";
@@ -185,6 +308,7 @@
       document.getElementById("batterName").textContent = p?.name || "Unknown";
       document.getElementById("batterSpot").textContent = `Spot: ${idx+1} • PA #${paNumber}`;
       
+      renderBases();
       renderScorersList();
       loadCurrentPA();
     }
@@ -194,7 +318,6 @@
       const eventId = paHistory[paIndex];
       
       if(!eventId){
-        // No event exists yet for this PA - clear selection
         clearSelection();
         currentPAEventId = null;
         return;
@@ -207,7 +330,6 @@
         return;
       }
 
-      // Load the saved PA
       currentResult = ev.result;
       currentRBI = ev.rbi || 0;
       sacOn = ev.sac || false;
@@ -217,7 +339,6 @@
       highlightResult(currentResult);
       setSegValue("rbiPicker", currentRBI);
       renderSac();
-      renderScorersList();
     }
 
     function clearSelection(){
@@ -288,11 +409,15 @@
           const latestEvent = playerEvents[0];
           App.updateEvent(latestEvent.id, { runs: (latestEvent.runs || 0) + 1 });
         }
+        
+        // Remove scorer from bases
+        ["1B", "2B", "3B"].forEach(base => {
+          if(bases[base] === scorerId) bases[base] = null;
+        });
       });
 
       // Save or update current PA
       if(currentPAEventId){
-        // Update existing event
         App.updateEvent(currentPAEventId, {
           result: currentResult,
           outType: currentResult === "K" ? "K" : null,
@@ -301,7 +426,6 @@
           runs: 0
         });
       } else {
-        // Create new event
         const ev = App.addEvent({
           gameId,
           playerId,
@@ -312,7 +436,6 @@
           runs: 0
         });
         
-        // Add to history
         const paIndex = getCurrentPAIndex();
         paHistory[paIndex] = ev.id;
       }
@@ -327,7 +450,7 @@
 
     document.getElementById("prevBatterBtn").addEventListener("click", ()=>{
       const paIndex = getCurrentPAIndex();
-      if(paIndex <= 0) return; // Can't go before first PA
+      if(paIndex <= 0) return;
       
       setCurrentPAIndex(paIndex - 1);
       clearSelection();
@@ -340,7 +463,6 @@
       window.location.href = "./reports.html";
     });
 
-    // Initialize
     App.initGameState(gameId);
     loadPAHistory();
     renderSac();
