@@ -347,3 +347,7 @@ input[type="date"]::-webkit-calendar-picker-indicator{ filter:invert(0.7); curso
 .base.occupied{ border-color:var(--green); background:var(--green-glow); }
 .base-label{ font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; }
 .base-runner{ font-size:12px; font-weight:700; color:var(--text); margin-top:4px; }
+
+/* draggable runner cursor */
+.base-runner[draggable="true"]{ cursor:move; }
+.base-runner[draggable="true"]:active{ cursor:grabbing; }
