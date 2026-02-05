@@ -330,3 +330,20 @@ input[type="date"]::-webkit-calendar-picker-indicator{ filter:invert(0.7); curso
   accent-color:var(--blue);
 }
 .scorer-checkbox span{ font-size:14px; font-weight:600; }
+
+/* base diamond */
+.base-diamond{ display:flex; flex-direction:column; align-items:center; gap:8px; margin-top:12px; }
+.base-row{ display:flex; gap:60px; }
+.base{
+  width:70px; height:70px;
+  background:var(--card); border:2px solid var(--border);
+  border-radius:8px; cursor:pointer;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  transition:border-color .2s, background .2s;
+  position:relative;
+}
+.base:hover{ border-color:var(--blue); background:var(--blue-glow); }
+.base.occupied{ border-color:var(--green); background:var(--green-glow); }
+.base-label{ font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; }
+.base-runner{ font-size:12px; font-weight:700; color:var(--text); margin-top:4px; }
